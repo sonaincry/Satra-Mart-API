@@ -1,0 +1,71 @@
+# .gitignore for .NET Core projects
+
+## User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+
+## Visual Studio / VS Code specific
+.vs/
+.vscode/
+# Ignore *.sln files in the .vs folder, but keep the root .sln file
+!.vs/*.sln
+
+## Rider / Resharper specific
+.idea/
+*.sln.iml
+
+## Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.[Pp]ublish.xml
+*.[Cc]ert
+*.config.bak
+
+## NuGet Packages
+*.nupkg
+# The packages folder can be ignored because of Package Restore
+**/[Pp]ackages/*
+# except build/, which is used as an extension point to inject custom build targets.
+!**/[Pp]ackages/build/
+# Roslyn Analyzers
+**/[Pp]ackages/analyzers/
+
+## Other
+*.Cache
+ClientBin/
+[Ss]tyle[Cc]op.*
+~$*
+*~
+*.dbmdl
+*.[Pp]fx
+*.pubxml
+*.publish.xml
+node_modules/
+npm-debug.log
+# Docker-compose temporary files
+docker-compose.override.yml
+secrets/
+
+# Rider specific
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/dictionaries
+.idea/**/shelf
+
