@@ -8,5 +8,7 @@ namespace Satra_Mart {
         public string PURCHASERNAME { get; set; }
         public string EMAIL { get; set; }
         public string PHONE { get; set; }
+        public string CCCD { get; set; }
+        public string MAQHNS { get; set; }
     }
 }

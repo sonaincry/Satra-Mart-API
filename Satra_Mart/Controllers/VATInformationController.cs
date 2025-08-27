@@ -153,6 +153,8 @@ namespace Satra_Mart.Controllers
                             [PURCHASERNAME] = @PURCHASERNAME,
                             [EMAIL] = @EMAIL,
                             [PHONE] = @PHONE,
+                            [CCCD] = @CCCD,
+                            [MAQHNS] = @MAQHNS,
                             [CUSTREQUEST] = 1
 
                         WHERE 
@@ -165,7 +167,9 @@ namespace Satra_Mart.Controllers
                         data.TAXCOMPANYADDRESS,
                         data.PURCHASERNAME,
                         data.EMAIL,
-                        data.PHONE
+                        data.PHONE,
+                        data.CCCD,
+                        data.MAQHNS
                     };
 
                     var rowsAffected = conn.Execute(updateQuery, parameters);
