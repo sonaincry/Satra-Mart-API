@@ -116,12 +116,12 @@ namespace Satra_Mart.Controllers
         }
 
 
-        [HttpPut("addv2/{recid}")] 
-        public IActionResult UpdateVatInfo(long recid, [FromBody] VatUpdateRequest data)
+        [HttpPut("addv2/{receiptId}")]
+        public IActionResult UpdateVatInfo(string receiptId, [FromBody] VatUpdateRequest data)
         {
-            if (recid == 0)
+            if (string.IsNullOrWhiteSpace(receiptId))
             {
-                return BadRequest(new { status = "Error", message = "A valid RECID must be provided in the URL." });
+                return BadRequest(new { status = "Error", message = "A valid ReceiptID must be provided in the URL." });
             }
             if (data == null)
             {
@@ -134,34 +134,45 @@ namespace Satra_Mart.Controllers
                 {
                     conn.Open();
 
-                    // 1. Check if the record exists before attempting to update it.
+                    // 🔹 Step 1: Find RECID from RETAILTRANSACTIONTABLE
+                    var recIdQuery = @"SELECT TOP 1 RECID 
+                               FROM [AXR3_DEV].[dbo].[RETAILTRANSACTIONTABLE]
+                               WHERE RECEIPTID = @ReceiptId";
+
+                    var realRecid = conn.ExecuteScalar<long?>(recIdQuery, new { ReceiptId = receiptId });
+
+                    if (realRecid == null)
+                    {
+                        return NotFound(new { status = "Error", message = $"Transaction with ReceiptID {receiptId} not found." });
+                    }
+
+                    // 🔹 Step 2: Check if record exists in VAT info table
                     var checkQuery = "SELECT COUNT(1) FROM [AXR3_DEV].[dbo].[VASRetailTransVATInformation] WHERE [RECID] = @RecId";
-                    var recordExists = conn.ExecuteScalar<bool>(checkQuery, new { RecId = recid });
+                    var recordExists = conn.ExecuteScalar<bool>(checkQuery, new { RecId = realRecid.Value });
 
                     if (!recordExists)
                     {
-                        return NotFound(new { status = "Error", message = $"Record with RECID {recid} not found." });
+                        return NotFound(new { status = "Error", message = $"Record with RECID {realRecid.Value} not found in VAT info." });
                     }
 
-                    // 2. If the record exists, proceed with the update.
+                    // 🔹 Step 3: Update VAT info
                     var updateQuery = @"
-                        UPDATE [AXR3_DEV].[dbo].[VASRetailTransVATInformation]
-                        SET 
-                            [TAXREGNUM] = @TAXREGNUM,
-                            [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
-                            [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
-                            [PURCHASERNAME] = @PURCHASERNAME,
-                            [EMAIL] = @EMAIL,
-                            [PHONE] = @PHONE,
-                            [CCCD] = @CCCD,
-                            [MAQHNS] = @MAQHNS,
-                            [CUSTREQUEST] = 1
+                UPDATE [AXR3_DEV].[dbo].[VASRetailTransVATInformation]
+                SET 
+                    [TAXREGNUM] = @TAXREGNUM,
+                    [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
+                    [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
+                    [PURCHASERNAME] = @PURCHASERNAME,
+                    [EMAIL] = @EMAIL,
+                    [PHONE] = @PHONE,
+                    [CCCD] = @CCCD,
+                    [MAQHNS] = @MAQHNS,
+                    [CUSTREQUEST] = 1
+                WHERE [RECID] = @RECID";
 
-                        WHERE 
-                            [RECID] = @RECID";
                     var parameters = new
                     {
-                        RECID = recid,
+                        RECID = realRecid.Value,
                         data.TAXREGNUM,
                         data.TAXCOMPANYNAME,
                         data.TAXCOMPANYADDRESS,
@@ -182,6 +193,7 @@ namespace Satra_Mart.Controllers
                 return StatusCode(500, new { status = "Error", message = ex.Message });
             }
         }
+
         //[HttpPost("add-with-identity")]
         //public IActionResult AddVatInfoWithIdentity([FromBody] VATInformation data)
         //{
