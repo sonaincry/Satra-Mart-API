@@ -9,7 +9,7 @@ namespace Satra_Mart.Controllers
     [Route("[controller]")]
     public class VATInformationController : ControllerBase
     {
-        private readonly string _connString; 
+        private readonly string _connString;
 
         public VATInformationController(IConfiguration configuration)
         {
@@ -29,7 +29,7 @@ namespace Satra_Mart.Controllers
                                           [SERIALNUM], [TAXCOMPANYADDRESS], [TAXCOMPANYNAME], [TAXREGNUM], [TAXTRANSTXT],
                                           [TRANSTIME], [DATAAREAID], [RECVERSION], [PARTITION], [RECID], [EMAIL],
                                           [PHONE], [CUSTACCOUNT], [CANCEL]
-                                 FROM [AXR3_DEV].[dbo].[VASRetailTransVATInformation]";
+                                 FROM [dbo].[VASRetailTransVATInformation]";
                     var result = conn.Query<VATInformation>(query).AsList();
                     return Ok(result);
                 }
@@ -58,7 +58,7 @@ namespace Satra_Mart.Controllers
                        [TAXCOMPANYNAME], [TAXREGNUM], [TAXTRANSTXT], [TRANSTIME],
                        [DATAAREAID], [RECVERSION], [PARTITION], [RECID], [EMAIL],
                        [PHONE], [CUSTACCOUNT], [CANCEL]
-                FROM [AXR3_DEV].[dbo].[VASRetailTransVATInformation]
+                FROM [dbo].[VASRetailTransVATInformation]
                 WHERE [RECID] = @RecId";
 
                     var result = conn.QueryFirstOrDefault<VATInformation>(query, new { RecId = recid });
@@ -84,7 +84,7 @@ namespace Satra_Mart.Controllers
                 {
                     conn.Open();
                     var insertQuery = @"
-                        INSERT INTO [AXR3_DEV].[dbo].[VASRetailTransVATInformation]
+                        INSERT INTO [dbo].[VASRetailTransVATInformation]
                         ([COMBINATION], [CUSTREQUEST], [FORMFORMAT], [FORMNUM], [INVOICEDATE],
                          [INVOICENUM], [PURCHASERNAME], [RETAILTRANSACTIONTABLE], [RETAILTRANSRECIDGROUP],
                          [SERIALNUM], [TAXCOMPANYADDRESS], [TAXCOMPANYNAME], [TAXREGNUM], [TAXTRANSTXT],
@@ -136,7 +136,7 @@ namespace Satra_Mart.Controllers
 
                     // 🔹 Step 1: Find RECID from RETAILTRANSACTIONTABLE
                     var recIdQuery = @"SELECT TOP 1 RECID 
-                               FROM [AXR3_DEV].[dbo].[RETAILTRANSACTIONTABLE]
+                               FROM [dbo].[RETAILTRANSACTIONTABLE]
                                WHERE RECEIPTID = @ReceiptId";
 
                     var realRecid = conn.ExecuteScalar<long?>(recIdQuery, new { ReceiptId = receiptId });
@@ -147,7 +147,7 @@ namespace Satra_Mart.Controllers
                     }
 
                     // 🔹 Step 2: Check if record exists in VAT info table
-                    var checkQuery = "SELECT COUNT(1) FROM [AXR3_DEV].[dbo].[VASRetailTransVATInformation] WHERE [RECID] = @RecId";
+                    var checkQuery = "SELECT COUNT(1) FROM [dbo].[VASRetailTransVATInformation] WHERE [RECID] = @RecId";
                     var recordExists = conn.ExecuteScalar<bool>(checkQuery, new { RecId = realRecid.Value });
 
                     if (!recordExists)
@@ -156,20 +156,45 @@ namespace Satra_Mart.Controllers
                     }
 
                     // 🔹 Step 3: Update VAT info
+                    //    var updateQuery = @"
+                    //UPDATE [Satramart].[dbo].[VASRetailTransVATInformation]
+                    //SET 
+                    //    [TAXREGNUM] = @TAXREGNUM,
+                    //    [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
+                    //    [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
+                    //    [PURCHASERNAME] = @PURCHASERNAME,
+                    //    [EMAIL] = @EMAIL,
+                    //    [PHONE] = @PHONE,
+                    //    [CCCD] = @CCCD,
+                    //    [MAQHNS] = @MAQHNS,
+                    //    [CUSTREQUEST] = 1
+                    //WHERE [RECID] = @RECID";
                     var updateQuery = @"
-                UPDATE [AXR3_DEV].[dbo].[VASRetailTransVATInformation]
-                SET 
-                    [TAXREGNUM] = @TAXREGNUM,
-                    [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
-                    [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
-                    [PURCHASERNAME] = @PURCHASERNAME,
-                    [EMAIL] = @EMAIL,
-                    [PHONE] = @PHONE,
-                    [CCCD] = @CCCD,
-                    [MAQHNS] = @MAQHNS,
-                    [CUSTREQUEST] = 1
-                WHERE [RECID] = @RECID";
+  
+    UPDATE [dbo].[VASRetailTransVATInformation]
+    SET 
+        [TAXREGNUM] = @TAXREGNUM,
+        [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
+        [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
+        [PURCHASERNAME] = @PURCHASERNAME,
+        [EMAIL] = @EMAIL,
+        [PHONE] = @PHONE,
+        [CCCD] = @CCCD,
+        [MAQHNS] = @MAQHNS,
+        [CUSTREQUEST] = 1
+    WHERE [RECID] = @RECID;
 
+    
+    UPDATE [dbo].[VASRETAILTRANSVATINFORMATIONVIEW]
+    SET 
+        [TAXREGNUM] = @TAXREGNUM,
+        [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
+        [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
+        [PURCHASERNAME] = @PURCHASERNAME,
+        [CCCD] = @CCCD,
+        [MAQHNS] = @MAQHNS,
+        [CUSTREQUEST] = 1
+    WHERE [RECID] = @RECID;";
                     var parameters = new
                     {
                         RECID = realRecid.Value,
