@@ -59,7 +59,7 @@ namespace Satra_Mart.Controllers
                        [DATAAREAID], [RECVERSION], [PARTITION], [RECID], [EMAIL],
                        [PHONE], [CUSTACCOUNT], [CANCEL]
                 FROM [dbo].[VASRetailTransVATInformation]
-                WHERE [RECID] = @RecId";
+                WHERE [RETAILTRANSACTIONTABLE] = @RecId";
 
                     var result = conn.QueryFirstOrDefault<VATInformation>(query, new { RecId = recid });
 
@@ -134,7 +134,6 @@ namespace Satra_Mart.Controllers
                 {
                     conn.Open();
 
-                    // 🔹 Step 1: Find RECID from RETAILTRANSACTIONTABLE
                     var recIdQuery = @"SELECT TOP 1 RECID 
                                FROM [dbo].[RETAILTRANSACTIONTABLE]
                                WHERE RECEIPTID = @ReceiptId";
@@ -146,8 +145,7 @@ namespace Satra_Mart.Controllers
                         return NotFound(new { status = "Error", message = $"Transaction with ReceiptID {receiptId} not found." });
                     }
 
-                    // 🔹 Step 2: Check if record exists in VAT info table
-                    var checkQuery = "SELECT COUNT(1) FROM [dbo].[VASRetailTransVATInformation] WHERE [RECID] = @RecId";
+                    var checkQuery = "SELECT COUNT(1) FROM [dbo].[VASRetailTransVATInformation] WHERE [RETAILTRANSACTIONTABLE] = @RecId";
                     var recordExists = conn.ExecuteScalar<bool>(checkQuery, new { RecId = realRecid.Value });
 
                     if (!recordExists)
@@ -155,20 +153,6 @@ namespace Satra_Mart.Controllers
                         return NotFound(new { status = "Error", message = $"Record with RECID {realRecid.Value} not found in VAT info." });
                     }
 
-                    // 🔹 Step 3: Update VAT info
-                    //    var updateQuery = @"
-                    //UPDATE [Satramart].[dbo].[VASRetailTransVATInformation]
-                    //SET 
-                    //    [TAXREGNUM] = @TAXREGNUM,
-                    //    [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
-                    //    [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
-                    //    [PURCHASERNAME] = @PURCHASERNAME,
-                    //    [EMAIL] = @EMAIL,
-                    //    [PHONE] = @PHONE,
-                    //    [CCCD] = @CCCD,
-                    //    [MAQHNS] = @MAQHNS,
-                    //    [CUSTREQUEST] = 1
-                    //WHERE [RECID] = @RECID";
                     var updateQuery = @"
   
     UPDATE [dbo].[VASRetailTransVATInformation]
@@ -182,7 +166,7 @@ namespace Satra_Mart.Controllers
         [CCCD] = @CCCD,
         [MAQHNS] = @MAQHNS,
         [CUSTREQUEST] = 1
-    WHERE [RECID] = @RECID;
+    WHERE [RETAILTRANSACTIONTABLE] = @RECID;
 
     
     UPDATE [dbo].[VASRETAILTRANSVATINFORMATIONVIEW]
@@ -194,7 +178,7 @@ namespace Satra_Mart.Controllers
         [CCCD] = @CCCD,
         [MAQHNS] = @MAQHNS,
         [CUSTREQUEST] = 1
-    WHERE [RECID] = @RECID;";
+    WHERE [RETAILTRANSACTIONTABLE] = @RECID;";
                     var parameters = new
                     {
                         RECID = realRecid.Value,
