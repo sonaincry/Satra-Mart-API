@@ -31,8 +31,9 @@ namespace Satra_Mart
         public long RECID { get; set; }
         public string EMAIL { get; set; }
         public string PHONE { get; set; }
+        public string CCCD { get; set; }
+        public string MAQHNS { get; set; }
         public string CUSTACCOUNT { get; set; }
-
         public int CANCEL { get; set; }
     }
 }
