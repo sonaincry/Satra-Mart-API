@@ -1,8 +1,11 @@
 ﻿using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using Satra_Mart;
+using System;
 using System.Data.SqlClient;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Satra_Mart.Controllers
 {
@@ -124,117 +127,257 @@ namespace Satra_Mart.Controllers
             }
 
         }
-        [HttpPut("addv2/{receiptId}")]
-        public IActionResult UpdateVatInfo(string receiptId, [FromBody] ReceiptVATRequest data)
-        {
-            if (string.IsNullOrWhiteSpace(receiptId))
-            {
-                return BadRequest(new { status = "Error", message = "A valid ReceiptID must be provided in the URL." });
-            }
-            if (data == null)
-            {
-                return BadRequest(new { status = "Error", message = "Request body cannot be empty." });
-            }
+        //    [HttpGet("receipt")]
+        //    public IActionResult ValidateReceipt(
+        //[FromQuery] string receiptid,
+        //[FromQuery] string dataareaid,
+        //[FromQuery] string storeno,
+        //[FromQuery] string date,
+        //[FromQuery] string sign,
+        //[FromServices] IConfiguration config)
+        //    {
+        //        string secretKey = config["AppSettings:HmacSecret"];
 
-            try
-            {
-                using (var conn = new SqlConnection(_connString))
-                {
-                    conn.Open();
+        //        string rawData = $"{receiptid}{dataareaid}{storeno}{date}".ToLower();
 
-                    var recIdQuery = @"SELECT TOP 1 RECID 
-                               FROM [dbo].[RETAILTRANSACTIONTABLE]
-                               WHERE RECEIPTID = @ReceiptId";
+        //        string expectedSign = HmacHelper.ComputeSignature(secretKey, rawData);
 
-                    var realRecid = conn.ExecuteScalar<long?>(recIdQuery, new { ReceiptId = receiptId });
+        //        if (expectedSign != sign)
+        //        {
+        //            return Unauthorized(new { status = "Error", message = "Invalid signature" });
+        //        }
 
-                    if (realRecid == null)
-                    {
-                        return NotFound(new { status = "Error", message = $"Transaction with ReceiptID {receiptId} not found." });
-                    }
+        //        return Ok(new { status = "Success", message = "Signature valid" });
+        //    }
 
-                    var invoiceCheckQuery = @"SELECT INVOICENUM 
-                                      FROM [dbo].[VASRetailTransVATInformation] 
-                                      WHERE [RETAILTRANSACTIONTABLE] = @RecId";
-                    var invoiceNum = conn.ExecuteScalar<string>(invoiceCheckQuery, new { RecId = realRecid.Value });
+        //[HttpPut("addv2/{receiptId}")]
+        //public IActionResult UpdateVatInfo(string receiptId, [FromBody] ReceiptVATRequest data)
+        //{
+        //    if (string.IsNullOrWhiteSpace(receiptId))
+        //    {
+        //        return BadRequest(new { status = "Error", message = "A valid ReceiptID must be provided in the URL." });
+        //    }
+        //    if (data == null)
+        //    {
+        //        return BadRequest(new { status = "Error", message = "Request body cannot be empty." });
+        //    }
 
-                    if (!string.IsNullOrEmpty(invoiceNum) && invoiceNum != "0")
-                    {
-                        return BadRequest(new { status = "Error", message = $"Einvoice already updated before = {invoiceNum}." });
-                    }
+        //    try
+        //    {
+        //        using (var conn = new SqlConnection(_connString))
+        //        {
+        //            conn.Open();
 
-                    var checkQuery = "SELECT COUNT(1) FROM [dbo].[VASRetailTransVATInformation] WHERE [RETAILTRANSACTIONTABLE] = @RecId";
-                    var recordExists = conn.ExecuteScalar<bool>(checkQuery, new { RecId = realRecid.Value });
+        //            var recIdQuery = @"SELECT TOP 1 RECID 
+        //                       FROM [dbo].[RETAILTRANSACTIONTABLE]
+        //                       WHERE RECEIPTID = @ReceiptId";
 
-                    if (!recordExists)
-                    {
-                        return NotFound(new { status = "Error", message = $"Record with RECID {realRecid.Value} not found in VAT info." });
-                    }
+        //            var realRecid = conn.ExecuteScalar<long?>(recIdQuery, new { ReceiptId = receiptId });
 
-                    var updateQuery = @"
-            UPDATE [dbo].[VASRetailTransVATInformation]
-                SET 
-                [TAXREGNUM] = @TAXREGNUM,
-                [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
-                [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
-                [PURCHASERNAME] = @PURCHASERNAME,
-                [EMAIL] = @EMAIL,
-                [PHONE] = @PHONE,
-                [CCCD] = @CCCD,
-                [MAQHNS] = @MAQHNS,
-                [CUSTREQUEST] = 1
-                WHERE [RETAILTRANSACTIONTABLE] = @RECID;
+        //            if (realRecid == null)
+        //            {
+        //                return NotFound(new { status = "Error", message = $"Transaction with ReceiptID {receiptId} not found." });
+        //            }
 
-            UPDATE [dbo].[VASRETAILTRANSVATINFORMATIONVIEW]
-                SET 
-                [TAXREGNUM] = @TAXREGNUM,
-                [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
-                [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
-                [PURCHASERNAME] = @PURCHASERNAME,
-                [CCCD] = @CCCD,
-                [MAQHNS] = @MAQHNS,
-                [CUSTREQUEST] = 1
-                WHERE [RETAILTRANSACTIONTABLE] = @RECID;";
-                    var parameters = new
-                    {
-                        RECID = realRecid.Value,
-                        data.TAXREGNUM,
-                        data.TAXCOMPANYNAME,
-                        data.TAXCOMPANYADDRESS,
-                        data.PURCHASERNAME,
-                        data.EMAIL,
-                        data.PHONE,
-                        data.CCCD,
-                        data.MAQHNS
-                    };
+        //            var invoiceCheckQuery = @"SELECT INVOICENUM 
+        //                              FROM [dbo].[VASRetailTransVATInformation] 
+        //                              WHERE [RETAILTRANSACTIONTABLE] = @RecId";
+        //            var invoiceNum = conn.ExecuteScalar<string>(invoiceCheckQuery, new { RecId = realRecid.Value });
 
-                    var rowsAffected = conn.Execute(updateQuery, parameters);
+        //            if (!string.IsNullOrEmpty(invoiceNum) && invoiceNum != "0")
+        //            {
+        //                return BadRequest(new { status = "Error", message = $"Einvoice already updated before = {invoiceNum}." });
+        //            }
 
-                    return Ok(new { status = "Success", message = "VAT Information updated successfully." });
-                }
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { status = "Error", message = ex.Message });
-            }
-        }
+        //            var checkQuery = "SELECT COUNT(1) FROM [dbo].[VASRetailTransVATInformation] WHERE [RETAILTRANSACTIONTABLE] = @RecId";
+        //            var recordExists = conn.ExecuteScalar<bool>(checkQuery, new { RecId = realRecid.Value });
+
+        //            if (!recordExists)
+        //            {
+        //                return NotFound(new { status = "Error", message = $"Record with RECID {realRecid.Value} not found in VAT info." });
+        //            }
+
+        //            var updateQuery = @"
+        //    UPDATE [dbo].[VASRetailTransVATInformation]
+        //        SET 
+        //        [TAXREGNUM] = @TAXREGNUM,
+        //        [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
+        //        [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
+        //        [PURCHASERNAME] = @PURCHASERNAME,
+        //        [EMAIL] = @EMAIL,
+        //        [PHONE] = @PHONE,
+        //        [CCCD] = @CCCD,
+        //        [MAQHNS] = @MAQHNS,
+        //        [CUSTREQUEST] = 1
+        //        WHERE [RETAILTRANSACTIONTABLE] = @RECID;
+
+        //    UPDATE [dbo].[VASRETAILTRANSVATINFORMATIONVIEW]
+        //        SET 
+        //        [TAXREGNUM] = @TAXREGNUM,
+        //        [TAXCOMPANYNAME] = @TAXCOMPANYNAME,
+        //        [TAXCOMPANYADDRESS] = @TAXCOMPANYADDRESS,
+        //        [PURCHASERNAME] = @PURCHASERNAME,
+        //        [CCCD] = @CCCD,
+        //        [MAQHNS] = @MAQHNS,
+        //        [CUSTREQUEST] = 1
+        //        WHERE [RETAILTRANSACTIONTABLE] = @RECID;";
+        //            var parameters = new
+        //            {
+        //                RECID = realRecid.Value,
+        //                data.TAXREGNUM,
+        //                data.TAXCOMPANYNAME,
+        //                data.TAXCOMPANYADDRESS,
+        //                data.PURCHASERNAME,
+        //                data.EMAIL,
+        //                data.PHONE,
+        //                data.CCCD,
+        //                data.MAQHNS
+        //            };
+
+        //            var rowsAffected = conn.Execute(updateQuery, parameters);
+
+        //            return Ok(new { status = "Success", message = "VAT Information updated successfully." });
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return StatusCode(500, new { status = "Error", message = ex.Message });
+        //    }
+        //}
+
+        //[HttpPost("receipt")]
+        //public IActionResult CreateReceiptRecord([FromBody] ReceiptVATRequest request)
+        //{
+        //    if (request == null)
+        //    {
+        //        return BadRequest();
+        //    }
+
+        //    try
+        //    {
+        //        using (var conn = new SqlConnection(_connString))
+        //        {
+        //            DateTime? invoiceDate = null;
+        //            if (!string.IsNullOrEmpty(request.INVOICEDATE))
+        //            {
+        //                string[] formats = { "ddMMyyyy", "dd/MM/yyyy" };
+        //                if (DateTime.TryParseExact(request.INVOICEDATE, formats, CultureInfo.InvariantCulture,
+        //                                          DateTimeStyles.None, out DateTime parsedDate))
+        //                {
+        //                    invoiceDate = parsedDate.Date;
+        //                }
+        //                else
+        //                {
+        //                    return BadRequest();
+        //                }
+        //            }
+
+        //            conn.Open();
+
+        //            var existsQuery = @"SELECT COUNT(1) 
+        //                        FROM [dbo].[ReceiptAPI] 
+        //                        WHERE [RETAILTRANSACTIONTABLE] = @RetailTransactionTable";
+
+        //            var exists = conn.ExecuteScalar<int>(existsQuery, new { RetailTransactionTable = request.RETAILTRANSACTIONTABLE }) > 0;
+
+        //            if (exists)
+        //            {
+        //                return Conflict(new { status = "Error", message = "Transaction already exists" });
+        //            }
+
+        //            var nextRecIdQuery = @"SELECT ISNULL(MAX(RECID), 0) + 1 FROM [dbo].[ReceiptAPI]";
+        //            long nextRecId = conn.ExecuteScalar<long>(nextRecIdQuery);
+        //            int recVersion = 1;
+
+        //            var insertQuery = @"
+        //    INSERT INTO [dbo].[ReceiptAPI]
+        //    (
+        //        RECID, RECVERSION,
+        //        TAXREGNUM, TAXCOMPANYNAME, TAXCOMPANYADDRESS, INVOICEDATE, PURCHASERNAME,
+        //        EMAIL, PHONE, CCCD, MAQHNS, DATAAREAID, RETAILTRANSACTIONTABLE
+        //    )
+        //    VALUES
+        //    (
+        //        @RECID, @RECVERSION,
+        //        @TAXREGNUM, @TAXCOMPANYNAME, @TAXCOMPANYADDRESS, @INVOICEDATE, @PURCHASERNAME,
+        //        @EMAIL, @PHONE, @CCCD, @MAQHNS, @DATAAREAID, @RETAILTRANSACTIONTABLE
+        //    )";
+
+        //            var parameters = new
+        //            {
+        //                RECID = nextRecId,
+        //                RECVERSION = recVersion,
+        //                request.TAXREGNUM,
+        //                request.TAXCOMPANYNAME,
+        //                request.TAXCOMPANYADDRESS,
+        //                INVOICEDATE = invoiceDate,
+        //                request.PURCHASERNAME,
+        //                request.EMAIL,
+        //                request.PHONE,
+        //                request.CCCD,
+        //                request.MAQHNS,
+        //                request.DATAAREAID,
+        //                request.RETAILTRANSACTIONTABLE
+        //            };
+
+        //            conn.Execute(insertQuery, parameters);
+
+        //            return Ok();
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return StatusCode(500, new { status = "Error", message = ex.Message });
+        //    }
+        //}
 
         [HttpPost("receipt")]
-        public IActionResult CreateReceiptRecord([FromBody] ReceiptVATRequest request)
+        public IActionResult CreateReceiptRecord(
+    [FromQuery] string receiptid,
+    [FromQuery] string dataareaid,
+    [FromQuery] string storeno,
+    [FromQuery] string date,
+    [FromQuery] string sign,
+    [FromBody] ReceiptVATRequest request,
+    [FromServices] IConfiguration config)
         {
             if (request == null)
             {
-                return BadRequest();
+                return BadRequest(new { status = "Error", message = "Request body missing" });
             }
 
             try
             {
+                string secretKey = config["AppSettings:HmacSecret"];
+                string rawData = $"{receiptid}{dataareaid}{storeno}{date}".ToLower();
+
+                string axSignature = HmacHelper.ComputeSignatureAXFormat(secretKey, rawData);
+
+                string hexSign = HmacHelper.ComputeSignature(secretKey, rawData, keyIsBase64: true, returnBase64: false);
+
+                string base64Sign = HmacHelper.ComputeSignature(secretKey, rawData, keyIsBase64: true, returnBase64: true);
+
+                bool signatureValid = string.Equals(sign, axSignature, StringComparison.OrdinalIgnoreCase) ||
+                                     string.Equals(sign, hexSign, StringComparison.OrdinalIgnoreCase) ||
+                                     string.Equals(sign, base64Sign, StringComparison.OrdinalIgnoreCase);
+
+                if (!signatureValid)
+                {
+                    Console.WriteLine($"Raw data: {rawData}");
+                    Console.WriteLine($"Received signature: {sign}");
+                    Console.WriteLine($"AX format signature: {axSignature}");
+                    Console.WriteLine($"HEX format signature: {hexSign}");
+                    Console.WriteLine($"Base64 format signature: {base64Sign}");
+
+                    return Unauthorized(new { status = "Error", message = "Invalid signature" });
+                }
+
                 using (var conn = new SqlConnection(_connString))
                 {
                     DateTime? invoiceDate = null;
                     if (!string.IsNullOrEmpty(request.INVOICEDATE))
                     {
-                        string[] formats = { "ddMMyyyy", "dd/MM/yyyy" };
+                        string[] formats = { "ddMMyyyy", "dd/MM/yyyy", "yyyy-MM-dd" };
                         if (DateTime.TryParseExact(request.INVOICEDATE, formats, CultureInfo.InvariantCulture,
                                                   DateTimeStyles.None, out DateTime parsedDate))
                         {
@@ -242,18 +385,16 @@ namespace Satra_Mart.Controllers
                         }
                         else
                         {
-                            return BadRequest();
+                            return BadRequest(new { status = "Error", message = "Invalid INVOICEDATE format" });
                         }
                     }
 
                     conn.Open();
 
-                    // check if RetailTransactionTable already exists
                     var existsQuery = @"SELECT COUNT(1) 
-                                FROM [dbo].[ReceiptAPI] 
-                                WHERE [RETAILTRANSACTIONTABLE] = @RetailTransactionTable";
-
-                    var exists = conn.ExecuteScalar<int>(existsQuery, new { RetailTransactionTable = request.RETAILTRANSACTIONTABLE }) > 0;
+                        FROM [dbo].[ReceiptAPI] 
+                        WHERE [RETAILTRANSACTIONTABLE] = @RetailTransactionTable";
+                    bool exists = conn.ExecuteScalar<int>(existsQuery, new { request.RETAILTRANSACTIONTABLE }) > 0;
 
                     if (exists)
                     {
@@ -265,18 +406,18 @@ namespace Satra_Mart.Controllers
                     int recVersion = 1;
 
                     var insertQuery = @"
-            INSERT INTO [dbo].[ReceiptAPI]
-            (
-                RECID, RECVERSION,
-                TAXREGNUM, TAXCOMPANYNAME, TAXCOMPANYADDRESS, INVOICEDATE, PURCHASERNAME,
-                EMAIL, PHONE, CCCD, MAQHNS, DATAAREAID, RETAILTRANSACTIONTABLE
-            )
-            VALUES
-            (
-                @RECID, @RECVERSION,
-                @TAXREGNUM, @TAXCOMPANYNAME, @TAXCOMPANYADDRESS, @INVOICEDATE, @PURCHASERNAME,
-                @EMAIL, @PHONE, @CCCD, @MAQHNS, @DATAAREAID, @RETAILTRANSACTIONTABLE
-            )";
+                        INSERT INTO [dbo].[ReceiptAPI]
+                        (
+                        RECID, RECVERSION,
+                        TAXREGNUM, TAXCOMPANYNAME, TAXCOMPANYADDRESS, INVOICEDATE, PURCHASERNAME,
+                        EMAIL, PHONE, CCCD, MAQHNS, DATAAREAID, RETAILTRANSACTIONTABLE
+                        )
+                        VALUES
+                        (
+                        @RECID, @RECVERSION,
+                        @TAXREGNUM, @TAXCOMPANYNAME, @TAXCOMPANYADDRESS, @INVOICEDATE, @PURCHASERNAME,
+                        @EMAIL, @PHONE, @CCCD, @MAQHNS, @DATAAREAID, @RETAILTRANSACTIONTABLE
+                        )";
 
                     var parameters = new
                     {
@@ -296,9 +437,9 @@ namespace Satra_Mart.Controllers
                     };
 
                     conn.Execute(insertQuery, parameters);
-
-                    return Ok();
                 }
+
+                return Ok(new { status = "Success", message = "Receipt saved successfully" });
             }
             catch (Exception ex)
             {
@@ -306,5 +447,37 @@ namespace Satra_Mart.Controllers
             }
         }
 
+        public static class HmacHelper
+        {
+            public static string ComputeSignature(string secretKey, string data, bool keyIsBase64, bool returnBase64)
+            {
+                byte[] keyBytes = keyIsBase64
+                    ? Convert.FromBase64String(secretKey)
+                    : Encoding.UTF8.GetBytes(secretKey);
+
+                var dataBytes = Encoding.UTF8.GetBytes(data);
+
+                using (var hmac = new HMACSHA256(keyBytes))
+                {
+                    var hash = hmac.ComputeHash(dataBytes);
+
+                    return returnBase64
+                        ? Convert.ToBase64String(hash)
+                        : BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+            }
+
+            public static string ComputeSignatureAXFormat(string secretKey, string data)
+            {
+                var keyBytes = Encoding.UTF8.GetBytes(secretKey);
+                var dataBytes = Encoding.UTF8.GetBytes(data);
+
+                using (var hmac = new HMACSHA256(keyBytes))
+                {
+                    var hash = hmac.ComputeHash(dataBytes);
+                    return Convert.ToBase64String(hash);
+                }
+            }
+        }
     }
 }
