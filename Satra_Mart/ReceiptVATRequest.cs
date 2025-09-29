@@ -14,6 +14,8 @@
 
         public string DATAAREAID { get; set; }
         public long RETAILTRANSACTIONTABLE { get; set; }
+        public string RETAILRECEIPTID { get; set; }
+        public string RETAILSTOREID { get; set; }
 
 
     }

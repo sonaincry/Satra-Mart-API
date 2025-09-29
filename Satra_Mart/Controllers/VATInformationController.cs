@@ -410,13 +410,15 @@ namespace Satra_Mart.Controllers
                         (
                         RECID, RECVERSION,
                         TAXREGNUM, TAXCOMPANYNAME, TAXCOMPANYADDRESS, INVOICEDATE, PURCHASERNAME,
-                        EMAIL, PHONE, CCCD, MAQHNS, DATAAREAID, RETAILTRANSACTIONTABLE
+                        EMAIL, PHONE, CCCD, MAQHNS, DATAAREAID, RETAILTRANSACTIONTABLE,
+                        TRANSDATE, RETAILRECEIPTID, RETAILSTOREID
                         )
                         VALUES
                         (
                         @RECID, @RECVERSION,
                         @TAXREGNUM, @TAXCOMPANYNAME, @TAXCOMPANYADDRESS, @INVOICEDATE, @PURCHASERNAME,
-                        @EMAIL, @PHONE, @CCCD, @MAQHNS, @DATAAREAID, @RETAILTRANSACTIONTABLE
+                        @EMAIL, @PHONE, @CCCD, @MAQHNS, @DATAAREAID, @RETAILTRANSACTIONTABLE,
+                        @TRANSDATE, @RETAILRECEIPTID, @RETAILSTOREID
                         )";
 
                     var parameters = new
@@ -433,7 +435,10 @@ namespace Satra_Mart.Controllers
                         request.CCCD,
                         request.MAQHNS,
                         request.DATAAREAID,
-                        request.RETAILTRANSACTIONTABLE
+                        request.RETAILTRANSACTIONTABLE,
+                        TRANSDATE = invoiceDate,
+                        request.RETAILRECEIPTID,
+                        request.RETAILSTOREID
                     };
 
                     conn.Execute(insertQuery, parameters);
