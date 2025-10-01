@@ -385,7 +385,7 @@ namespace Satra_Mart.Controllers
                         }
                         else
                         {
-                            return BadRequest(new { status = "Error", message = "Invalid INVOICEDATE format" });
+                            return BadRequest(new { status = "Error", message = "Invalid Date format" });
                         }
                     }
 
@@ -393,12 +393,12 @@ namespace Satra_Mart.Controllers
 
                     var existsQuery = @"SELECT COUNT(1) 
                         FROM [dbo].[ReceiptAPI] 
-                        WHERE [RETAILTRANSACTIONTABLE] = @RetailTransactionTable";
-                    bool exists = conn.ExecuteScalar<int>(existsQuery, new { request.RETAILTRANSACTIONTABLE }) > 0;
+                        WHERE [RETAILRECEIPTID] = @RETAILRECEIPTID"; 
+                    bool exists = conn.ExecuteScalar<int>(existsQuery, new { request.RETAILRECEIPTID }) > 0;
 
                     if (exists)
                     {
-                        return Conflict(new { status = "Error", message = "Transaction already exists" });
+                        return Conflict(new { status = "Error", message = "Receipt already created" });
                     }
 
                     var nextRecIdQuery = @"SELECT ISNULL(MAX(RECID), 0) + 1 FROM [dbo].[ReceiptAPI]";
@@ -410,14 +410,14 @@ namespace Satra_Mart.Controllers
                         (
                         RECID, RECVERSION,
                         TAXREGNUM, TAXCOMPANYNAME, TAXCOMPANYADDRESS, INVOICEDATE, PURCHASERNAME,
-                        EMAIL, PHONE, CCCD, MAQHNS, DATAAREAID, RETAILTRANSACTIONTABLE,
+                        EMAIL, PHONE, CCCD, MAQHNS, DATAAREAID,
                         TRANSDATE, RETAILRECEIPTID, RETAILSTOREID
                         )
                         VALUES
                         (
                         @RECID, @RECVERSION,
                         @TAXREGNUM, @TAXCOMPANYNAME, @TAXCOMPANYADDRESS, @INVOICEDATE, @PURCHASERNAME,
-                        @EMAIL, @PHONE, @CCCD, @MAQHNS, @DATAAREAID, @RETAILTRANSACTIONTABLE,
+                        @EMAIL, @PHONE, @CCCD, @MAQHNS, @DATAAREAID,
                         @TRANSDATE, @RETAILRECEIPTID, @RETAILSTOREID
                         )";
 
@@ -435,7 +435,6 @@ namespace Satra_Mart.Controllers
                         request.CCCD,
                         request.MAQHNS,
                         request.DATAAREAID,
-                        request.RETAILTRANSACTIONTABLE,
                         TRANSDATE = invoiceDate,
                         request.RETAILRECEIPTID,
                         request.RETAILSTOREID
