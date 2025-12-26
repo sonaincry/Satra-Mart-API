@@ -23,11 +23,11 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 //IF (app.Environment.IsDevelopment()) BLOCK
 // app.UseSwagger() and app.UseSwaggerUI() should be directly here
-app.UseSwagger(); // <--- REMOVE THE IF CONDITION AROUND THIS
-app.UseSwaggerUI(); // <--- REMOVE THE IF CONDITION AROUND THIS
+app.UseSwagger(); 
+app.UseSwaggerUI();
 
 
-app.UseCors("AllowAll"); // This looks correct for enabling CORS across your application
+app.UseCors("AllowAll"); 
 
 app.UseAuthorization();
 

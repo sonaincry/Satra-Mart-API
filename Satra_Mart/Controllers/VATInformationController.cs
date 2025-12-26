@@ -93,6 +93,72 @@ namespace Satra_Mart.Controllers
                 return StatusCode(500, new { status = "Error", message = ex.Message });
             }
         }
+
+        [HttpGet("transaction-info/{receiptId}")]
+        public IActionResult GetTransactionInfo(string receiptId)
+        {
+            if (string.IsNullOrWhiteSpace(receiptId))
+            {
+                return BadRequest(new
+                {
+                    status = "Error",
+                    message = "ReceiptId is required"
+                });
+            }
+            try
+            {
+                using (var conn = new SqlConnection(_connString))
+                {
+                    conn.Open();
+                    var query = @"
+        SELECT TOP 1
+            RECEIPTID,
+            PAYMENTAMOUNT,
+            STORE
+        FROM [dbo].[RETAILTRANSACTIONTABLE]
+        WHERE RECEIPTID = @ReceiptId";
+                    var result = conn.QueryFirstOrDefault(query, new
+                    {
+                        ReceiptId = receiptId
+                    });
+                    if (result == null)
+                    {
+                        return NotFound(new
+                        {
+                            status = "Error",
+                            message = $"Transaction not found for ReceiptId {receiptId}"
+                        });
+                    }
+
+                    var storeQuery = @"
+        SELECT TOP 1 b.NAME
+        FROM RETAILCHANNELTABLE a
+        JOIN (SELECT recid FROM DIRPARTYTABLE WHERE INSTANCERELATIONTYPE=2377) AS dt ON dt.RECID = a.OMOPERATINGUNITID
+        JOIN DIRPARTYTABLE b ON b.RECID = dt.RECID
+        WHERE a.STORENUMBER = @StoreNumber AND a.partition = 5637144576";
+                    var storeName = conn.QueryFirstOrDefault<string>(storeQuery, new
+                    {
+                        StoreNumber = result.STORE
+                    });
+
+                    return Ok(new
+                    {
+                        receiptId = result.RECEIPTID,
+                        paymentAmount = result.PAYMENTAMOUNT,
+                        storeName = storeName ?? "Unknown Store"  
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    status = "Error",
+                    message = ex.Message
+                });
+            }
+        }
+
         [HttpGet("get-recid")]
         public IActionResult GetRecId([FromQuery] string receiptId)
         {
