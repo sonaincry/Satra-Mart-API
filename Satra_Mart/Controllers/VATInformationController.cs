@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Satra_Mart;
 using System;
+using System.Collections.Concurrent;
 using System.Data.SqlClient;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -15,9 +16,146 @@ namespace Satra_Mart.Controllers
     {
         private readonly string _connString;
 
+        private static ConcurrentDictionary<string, string> _storeNameCache = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static bool _storeCacheLoaded = false;
+        private static readonly object _cacheLock = new object();
+
         public VATInformationController(IConfiguration configuration)
         {
             _connString = configuration.GetConnectionString("DefaultConnection");
+
+            if (!_storeCacheLoaded)
+            {
+                lock (_cacheLock)
+                {
+                    if (!_storeCacheLoaded)
+                    {
+                        LoadStoreNameCache();
+                        _storeCacheLoaded = true;
+                    }
+                }
+            }
+        }
+
+        private void LoadStoreNameCache()
+        {
+            try
+            {
+                using (var conn = new SqlConnection(_connString))
+                {
+                    conn.Open();
+                    var query = @"
+SELECT a.STORENUMBER, b.NAME
+FROM RETAILCHANNELTABLE a
+JOIN (SELECT recid FROM DIRPARTYTABLE WHERE INSTANCERELATIONTYPE = 2377) AS dt ON dt.RECID = a.OMOPERATINGUNITID
+JOIN DIRPARTYTABLE b ON b.RECID = dt.RECID
+WHERE a.partition = 5637144576";
+
+                    var rows = conn.Query(query);
+                    foreach (var row in rows)
+                    {
+                        string storeNumber = row.STORENUMBER?.ToString();
+                        string storeName = row.NAME?.ToString();
+                        if (!string.IsNullOrEmpty(storeNumber))
+                            _storeNameCache[storeNumber] = storeName ?? "Unknown Store";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load store name cache: {ex.Message}");
+            }
+        }
+
+        [HttpPost("refresh-store-cache")]
+        public IActionResult RefreshStoreCache()
+        {
+            lock (_cacheLock)
+            {
+                _storeNameCache.Clear();
+                _storeCacheLoaded = false;
+                LoadStoreNameCache();
+                _storeCacheLoaded = true;
+            }
+            return Ok(new { message = $"Store cache refreshed. {_storeNameCache.Count} stores loaded." });
+        }
+
+        [HttpGet("transaction-info/{receiptId}")]
+        public IActionResult GetTransactionInfo(
+            string receiptId,
+            [FromQuery] string date)
+        {
+            if (string.IsNullOrWhiteSpace(receiptId))
+            {
+                return BadRequest(new
+                {
+                    status = "Error",
+                    message = "ReceiptId is required"
+                });
+            }
+
+            try
+            {
+                using (var conn = new SqlConnection(_connString))
+                {
+                    conn.Open();
+
+                    // Parse date from query param (format: yyyy-MM-dd)
+                    DateTime? transDate = null;
+                    if (!string.IsNullOrWhiteSpace(date) &&
+                        DateTime.TryParseExact(date, "yyyy-MM-dd",
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.None, out var parsedDate))
+                    {
+                        transDate = parsedDate;
+                    }
+
+                    var query = @"
+SELECT TOP 1
+    RECEIPTID,
+    PAYMENTAMOUNT,
+    STORE
+FROM [dbo].[RETAILTRANSACTIONTABLE]
+WHERE RECEIPTID = @ReceiptId
+  AND PARTITION = 5637144576
+  AND (@TransDate IS NULL OR TRANSDATE = @TransDate)";
+
+                    var result = conn.QueryFirstOrDefault(query, new
+                    {
+                        ReceiptId = receiptId,
+                        TransDate = transDate
+                    });
+
+                    if (result == null)
+                    {
+                        return NotFound(new
+                        {
+                            status = "Error",
+                            message = $"Transaction not found for ReceiptId {receiptId}"
+                        });
+                    }
+
+                    string storeNumber = result.STORE?.ToString();
+                    string storeName = "Unknown Store";
+                    if (!string.IsNullOrEmpty(storeNumber))
+                        _storeNameCache.TryGetValue(storeNumber, out storeName);
+
+                    return Ok(new
+                    {
+                        receiptId = result.RECEIPTID,
+                        paymentAmount = result.PAYMENTAMOUNT,
+                        storeName = storeName ?? "Unknown Store"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    status = "Error",
+                    message = ex.Message
+                });
+            }
         }
 
         [HttpGet("get")]
@@ -41,6 +179,42 @@ namespace Satra_Mart.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message);
+            }
+        }
+
+        [HttpGet("details")]
+        public IActionResult GetDetailsSecure(
+            [FromQuery] string receiptid,
+            [FromQuery] string dataareaid,
+            [FromQuery] string storeno,
+            [FromQuery] string date,
+            [FromQuery] string sign,
+            [FromServices] IConfiguration config)
+        {
+            if (!ValidateSignature(receiptid, dataareaid, storeno, date, sign, config))
+                return Unauthorized(new { message = "Invalid signature" });
+
+            using (var conn = new SqlConnection(_connString))
+            {
+                conn.Open();
+
+                var recIdQuery = @"SELECT TOP 1 RECID 
+                           FROM RETAILTRANSACTIONTABLE
+                           WHERE RECEIPTID = @ReceiptId";
+
+                var recId = conn.ExecuteScalar<long?>(recIdQuery, new { ReceiptId = receiptid });
+
+                if (recId == null)
+                    return NotFound("Receipt not found");
+
+                var query = @"
+            SELECT *
+            FROM VASRetailTransVATInformation
+            WHERE RETAILTRANSACTIONTABLE = @RecId";
+
+                var result = conn.QueryFirstOrDefault<VATInformation>(query, new { RecId = recId });
+
+                return Ok(result);
             }
         }
 
@@ -94,71 +268,6 @@ namespace Satra_Mart.Controllers
             }
         }
 
-        [HttpGet("transaction-info/{receiptId}")]
-        public IActionResult GetTransactionInfo(string receiptId)
-        {
-            if (string.IsNullOrWhiteSpace(receiptId))
-            {
-                return BadRequest(new
-                {
-                    status = "Error",
-                    message = "ReceiptId is required"
-                });
-            }
-            try
-            {
-                using (var conn = new SqlConnection(_connString))
-                {
-                    conn.Open();
-                    var query = @"
-        SELECT TOP 1
-            RECEIPTID,
-            PAYMENTAMOUNT,
-            STORE
-        FROM [dbo].[RETAILTRANSACTIONTABLE]
-        WHERE RECEIPTID = @ReceiptId";
-                    var result = conn.QueryFirstOrDefault(query, new
-                    {
-                        ReceiptId = receiptId
-                    });
-                    if (result == null)
-                    {
-                        return NotFound(new
-                        {
-                            status = "Error",
-                            message = $"Transaction not found for ReceiptId {receiptId}"
-                        });
-                    }
-
-                    var storeQuery = @"
-        SELECT TOP 1 b.NAME
-        FROM RETAILCHANNELTABLE a
-        JOIN (SELECT recid FROM DIRPARTYTABLE WHERE INSTANCERELATIONTYPE=2377) AS dt ON dt.RECID = a.OMOPERATINGUNITID
-        JOIN DIRPARTYTABLE b ON b.RECID = dt.RECID
-        WHERE a.STORENUMBER = @StoreNumber AND a.partition = 5637144576";
-                    var storeName = conn.QueryFirstOrDefault<string>(storeQuery, new
-                    {
-                        StoreNumber = result.STORE
-                    });
-
-                    return Ok(new
-                    {
-                        receiptId = result.RECEIPTID,
-                        paymentAmount = result.PAYMENTAMOUNT,
-                        storeName = storeName ?? "Unknown Store"  
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    status = "Error",
-                    message = ex.Message
-                });
-            }
-        }
-
         [HttpGet("get-recid")]
         public IActionResult GetRecId([FromQuery] string receiptId)
         {
@@ -191,127 +300,59 @@ namespace Satra_Mart.Controllers
             {
                 return StatusCode(500, new { status = "Error", message = ex.Message });
             }
-
         }
 
         [HttpPost("receipt")]
         public IActionResult CreateReceiptRecord(
-    [FromQuery] string receiptid,
-    [FromQuery] string dataareaid,
-    [FromQuery] string storeno,
-    [FromQuery] string date,
-    [FromQuery] string sign,
-    [FromBody] ReceiptVATRequest request,
-    [FromServices] IConfiguration config)
+            [FromQuery] string receiptid,
+            [FromQuery] string dataareaid,
+            [FromQuery] string storeno,
+            [FromQuery] string date,
+            [FromQuery] string sign,
+            [FromBody] ReceiptVATRequest request,
+            [FromServices] IConfiguration config)
         {
             if (request == null)
+                return BadRequest("Request body missing");
+
+            if (!ValidateSignature(receiptid, dataareaid, storeno, date, sign, config))
+                return Unauthorized("Invalid signature");
+
+            if (!string.Equals(receiptid, request.RETAILRECEIPTID, StringComparison.OrdinalIgnoreCase))
+                return BadRequest("ReceiptId mismatch");
+
+            using (var conn = new SqlConnection(_connString))
             {
-                return BadRequest(new { status = "Error", message = "Request body missing" });
+                conn.Open();
+
+                var existsQuery = @"
+                    SELECT COUNT(1)
+                    FROM ReceiptAPI
+                    WHERE RETAILRECEIPTID = @ReceiptId";
+
+                bool exists = conn.ExecuteScalar<int>(existsQuery,
+                    new { ReceiptId = receiptid }) > 0;
+
+                if (exists)
+                    return Conflict("Receipt already created");
+
+                var insertQuery = @"
+                    INSERT INTO ReceiptAPI
+                    (RECID, RECVERSION, TAXREGNUM, TAXCOMPANYNAME,
+                     TAXCOMPANYADDRESS, INVOICEDATE, PURCHASERNAME,
+                     EMAIL, PHONE, CCCD, MAQHNS, DATAAREAID,
+                     TRANSDATE, RETAILRECEIPTID, RETAILSTOREID, QRREQUEST)
+                    VALUES
+                    ((SELECT ISNULL(MAX(RECID),0)+1 FROM ReceiptAPI),
+                     1, @TAXREGNUM, @TAXCOMPANYNAME, @TAXCOMPANYADDRESS,
+                     @INVOICEDATE, @PURCHASERNAME,
+                     @EMAIL, @PHONE, @CCCD, @MAQHNS, @DATAAREAID,
+                     @INVOICEDATE, @RETAILRECEIPTID, @RETAILSTOREID, 1)";
+
+                conn.Execute(insertQuery, request);
             }
 
-            try
-            {
-                string secretKey = config["AppSettings:HmacSecret"];
-                string rawData = $"{receiptid}{dataareaid}{storeno}{date}".ToLower();
-
-                string axSignature = HmacHelper.ComputeSignatureAXFormat(secretKey, rawData);
-
-                string hexSign = HmacHelper.ComputeSignature(secretKey, rawData, keyIsBase64: true, returnBase64: false);
-
-                string base64Sign = HmacHelper.ComputeSignature(secretKey, rawData, keyIsBase64: true, returnBase64: true);
-
-                bool signatureValid = string.Equals(sign, axSignature, StringComparison.OrdinalIgnoreCase) ||
-                                     string.Equals(sign, hexSign, StringComparison.OrdinalIgnoreCase) ||
-                                     string.Equals(sign, base64Sign, StringComparison.OrdinalIgnoreCase);
-
-                if (!signatureValid)
-                {
-                    Console.WriteLine($"Raw data: {rawData}");
-                    Console.WriteLine($"Received signature: {sign}");
-                    Console.WriteLine($"AX format signature: {axSignature}");
-                    Console.WriteLine($"HEX format signature: {hexSign}");
-                    Console.WriteLine($"Base64 format signature: {base64Sign}");
-
-                    return Unauthorized(new { status = "Error", message = "Invalid signature" });
-                }
-
-                using (var conn = new SqlConnection(_connString))
-                {
-                    DateTime? invoiceDate = null;
-                    if (!string.IsNullOrEmpty(request.INVOICEDATE))
-                    {
-                        string[] formats = { "ddMMyyyy", "dd/MM/yyyy", "yyyy-MM-dd" };
-                        if (DateTime.TryParseExact(request.INVOICEDATE, formats, CultureInfo.InvariantCulture,
-                                                  DateTimeStyles.None, out DateTime parsedDate))
-                        {
-                            invoiceDate = parsedDate.Date;
-                        }
-                        else
-                        {
-                            return BadRequest(new { status = "Error", message = "Invalid Date format" });
-                        }
-                    }
-
-                    conn.Open();
-
-                    var existsQuery = @"SELECT COUNT(1) 
-                        FROM [dbo].[ReceiptAPI] 
-                        WHERE [RETAILRECEIPTID] = @RETAILRECEIPTID"; 
-                    bool exists = conn.ExecuteScalar<int>(existsQuery, new { request.RETAILRECEIPTID }) > 0;
-
-                    if (exists)
-                    {
-                        return Conflict(new { status = "Error", message = "Receipt already created" });
-                    }
-
-                    var nextRecIdQuery = @"SELECT ISNULL(MAX(RECID), 0) + 1 FROM [dbo].[ReceiptAPI]";
-                    long nextRecId = conn.ExecuteScalar<long>(nextRecIdQuery);
-                    int recVersion = 1;
-
-                    var insertQuery = @"
-                        INSERT INTO [dbo].[ReceiptAPI]
-                        (
-                        RECID, RECVERSION,
-                        TAXREGNUM, TAXCOMPANYNAME, TAXCOMPANYADDRESS, INVOICEDATE, PURCHASERNAME,
-                        EMAIL, PHONE, CCCD, MAQHNS, DATAAREAID,
-                        TRANSDATE, RETAILRECEIPTID, RETAILSTOREID
-                        )
-                        VALUES
-                        (
-                        @RECID, @RECVERSION,
-                        @TAXREGNUM, @TAXCOMPANYNAME, @TAXCOMPANYADDRESS, @INVOICEDATE, @PURCHASERNAME,
-                        @EMAIL, @PHONE, @CCCD, @MAQHNS, @DATAAREAID,
-                        @TRANSDATE, @RETAILRECEIPTID, @RETAILSTOREID
-                        )";
-
-                    var parameters = new
-                    {
-                        RECID = nextRecId,
-                        RECVERSION = recVersion,
-                        request.TAXREGNUM,
-                        request.TAXCOMPANYNAME,
-                        request.TAXCOMPANYADDRESS,
-                        INVOICEDATE = invoiceDate,
-                        request.PURCHASERNAME,
-                        request.EMAIL,
-                        request.PHONE,
-                        request.CCCD,
-                        request.MAQHNS,
-                        request.DATAAREAID,
-                        TRANSDATE = invoiceDate,
-                        request.RETAILRECEIPTID,
-                        request.RETAILSTOREID
-                    };
-
-                    conn.Execute(insertQuery, parameters);
-                }
-
-                return Ok(new { status = "Success", message = "Receipt saved successfully" });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { status = "Error", message = ex.Message });
-            }
+            return Ok("Receipt saved successfully");
         }
 
         public static class HmacHelper
@@ -345,6 +386,21 @@ namespace Satra_Mart.Controllers
                     return Convert.ToBase64String(hash);
                 }
             }
+        }
+
+        private bool ValidateSignature(
+            string receiptid,
+            string dataareaid,
+            string storeno,
+            string date,
+            string sign,
+            IConfiguration config)
+        {
+            string secretKey = config["AppSettings:HmacSecret"];
+            string rawData = $"{receiptid}{dataareaid}{storeno}{date}".ToLower();
+
+            string expected = HmacHelper.ComputeSignatureAXFormat(secretKey, rawData);
+            return string.Equals(sign, expected, StringComparison.OrdinalIgnoreCase);
         }
     }
 }
